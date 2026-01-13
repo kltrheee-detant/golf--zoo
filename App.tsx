@@ -1,123 +1,101 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Calendar, 
-  Users, 
-  FileText, 
-  Wallet, 
-  LayoutDashboard, 
-  Plus, 
-  Menu, 
-  X, 
-  Trash2, 
-  Info,
-  RefreshCw
+  Calendar, Users, FileText, Wallet, LayoutDashboard, 
+  Plus, Menu, X, Trash2, Info, RefreshCw, Copy, Check
 } from 'lucide-react';
-import { ViewType, Member, Meeting, Notice, FinancialRecord, AttendanceStatus, AttendanceStatusType } from './types.ts';
-import { geminiService } from './services/geminiService.ts';
+import { GoogleGenAI } from "@google/genai";
 
+// --- 내부 타입 정의 (별도 파일 필요 없음) ---
+const AttendanceStatus = {
+  ATTENDING: '참석',
+  ABSENT: '불참',
+  PENDING: '미정'
+} as const;
+
+// --- ID 생성기 ---
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-function encodeData(obj: any) {
-  try {
-    const str = JSON.stringify(obj);
-    const bytes = new TextEncoder().encode(str);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  } catch (e) {
-    return "";
-  }
-}
-
-function decodeData(base64: string) {
-  try {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const str = new TextDecoder().decode(bytes);
-    return JSON.parse(str);
-  } catch (e) {
-    return null;
-  }
-}
-
+// --- 앱 컴포넌트 시작 ---
 export default function App() {
-  const [activeView, setActiveView] = useState<ViewType>('DASHBOARD');
+  const [activeView, setActiveView] = useState('DASHBOARD');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  const [members, setMembers] = useState<Member[]>([]);
-  const [notices, setNotices] = useState<Notice[]>([]);
-  const [finances, setFinances] = useState<FinancialRecord[]>([]);
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  // 데이터 상태
+  const [members, setMembers] = useState([]);
+  const [notices, setNotices] = useState([]);
+  const [finances, setFinances] = useState([]);
+  const [meetings, setMeetings] = useState([]);
+  
+  const [modalType, setModalType] = useState(null);
 
-  const [modalType, setModalType] = useState<ViewType | null>(null);
-
+  // 초기 데이터 로드 및 공유 링크 처리
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const sharedData = urlParams.get('data');
 
     if (sharedData) {
-      const decoded = decodeData(sharedData);
-      if (decoded && confirm('공유받은 새로운 데이터가 있습니다. 현재 내 데이터를 덮어쓰고 동기화할까요?')) {
-        setMembers(decoded.members || []);
-        setNotices(decoded.notices || []);
-        setFinances(decoded.finances || []);
-        setMeetings(decoded.meetings || []);
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return;
+      try {
+        const decoded = JSON.parse(decodeURIComponent(atob(sharedData)));
+        if (decoded && confirm('공유받은 데이터가 있습니다. 현재 데이터를 덮어쓰고 동기화할까요?')) {
+          setMembers(decoded.members || []);
+          setNotices(decoded.notices || []);
+          setFinances(decoded.finances || []);
+          setMeetings(decoded.meetings || []);
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return;
+        }
+      } catch (e) {
+        console.error("데이터 복원 실패");
       }
     }
 
-    try {
-      const savedMembers = localStorage.getItem('zoo_members');
-      const savedNotices = localStorage.getItem('zoo_notices');
-      const savedFinances = localStorage.getItem('zoo_finances');
-      const savedMeetings = localStorage.getItem('zoo_meetings');
-
-      if (savedMembers) setMembers(JSON.parse(savedMembers));
-      if (savedNotices) setNotices(JSON.parse(savedNotices));
-      if (savedFinances) setFinances(JSON.parse(savedFinances));
-      if (savedMeetings) setMeetings(JSON.parse(savedMeetings));
-    } catch (e) {
-      console.error("Storage load error");
-    }
+    // 로컬 스토리지 로드
+    const load = (key, fallback) => {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : fallback;
+    };
+    
+    setMembers(load('zoo_members', []));
+    setNotices(load('zoo_notices', []));
+    setFinances(load('zoo_finances', []));
+    setMeetings(load('zoo_meetings', []));
   }, []);
 
-  useEffect(() => { if (members.length > 0) localStorage.setItem('zoo_members', JSON.stringify(members)); }, [members]);
-  useEffect(() => { if (notices.length > 0) localStorage.setItem('zoo_notices', JSON.stringify(notices)); }, [notices]);
-  useEffect(() => { if (finances.length > 0) localStorage.setItem('zoo_finances', JSON.stringify(finances)); }, [finances]);
-  useEffect(() => { if (meetings.length > 0) localStorage.setItem('zoo_meetings', JSON.stringify(meetings)); }, [meetings]);
+  // 데이터 변경 시 자동 저장
+  useEffect(() => { localStorage.setItem('zoo_members', JSON.stringify(members)); }, [members]);
+  useEffect(() => { localStorage.setItem('zoo_notices', JSON.stringify(notices)); }, [notices]);
+  useEffect(() => { localStorage.setItem('zoo_finances', JSON.stringify(finances)); }, [finances]);
+  useEffect(() => { localStorage.setItem('zoo_meetings', JSON.stringify(meetings)); }, [meetings]);
 
-  const totalBalance = finances.reduce((acc, curr) => 
+  // 총 잔액 계산
+  const totalBalance = useMemo(() => finances.reduce((acc, curr) => 
     curr.type === 'INCOME' ? acc + curr.amount : acc - curr.amount, 0
-  );
+  ), [finances]);
 
-  const deleteItem = (type: ViewType, id: string) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return;
-    if (type === 'MEMBERS') setMembers(prev => prev.filter(m => m.id !== id));
-    if (type === 'NOTICES') setNotices(prev => prev.filter(n => n.id !== id));
-    if (type === 'FINANCES') setFinances(prev => prev.filter(f => f.id !== id));
-    if (type === 'ATTENDANCE') setMeetings(prev => prev.filter(m => m.id !== id));
-  };
-
-  const copyToClipboard = (text: string, msg: string = '복사되었습니다!') => {
-    navigator.clipboard.writeText(text).then(() => alert(msg)).catch(() => alert('복사 실패'));
-  };
-
+  // 공유 링크 생성
   const shareDataLink = () => {
-    const data = { members, notices, finances, meetings };
-    const encoded = encodeData(data);
-    if (!encoded) return alert('데이터 변환 중 오류가 발생했습니다.');
-    const shareUrl = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
-    copyToClipboard(shareUrl, '회원용 동기화 링크가 복사되었습니다!');
+    try {
+      const data = { members, notices, finances, meetings };
+      const encoded = btoa(encodeURIComponent(JSON.stringify(data)));
+      const shareUrl = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        alert('동기화 링크가 복사되었습니다! 카톡방에 공유하세요.');
+      });
+    } catch (e) {
+      alert('링크 생성 중 오류가 발생했습니다.');
+    }
   };
 
-  const Modal = ({ title, children, onClose, onSave }: any) => (
+  const deleteItem = (type, id) => {
+    if (!confirm('정말 삭제하시겠습니까?')) return;
+    if (type === 'MEMBERS') setMembers(members.filter(m => m.id !== id));
+    if (type === 'NOTICES') setNotices(notices.filter(n => n.id !== id));
+    if (type === 'FINANCES') setFinances(finances.filter(f => f.id !== id));
+    if (type === 'ATTENDANCE') setMeetings(meetings.filter(m => m.id !== id));
+  };
+
+  const Modal = ({ title, children, onClose, onSave }) => (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-fade-in">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -137,6 +115,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex bg-slate-50">
+      {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200 p-6 sticky top-0 h-screen">
         <div className="flex items-center space-x-3 mb-10 px-2">
           <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl italic">Z</div>
@@ -150,18 +129,19 @@ export default function App() {
             { id: 'FINANCES', label: '회비내역', icon: Wallet },
             { id: 'MEMBERS', label: '회원관리', icon: Users }
           ].map((item) => (
-            <button key={item.id} onClick={() => setActiveView(item.id as any)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition ${activeView === item.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <button key={item.id} onClick={() => setActiveView(item.id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition ${activeView === item.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}>
               <item.icon size={20} />
               <span className="font-semibold">{item.label}</span>
             </button>
           ))}
         </nav>
         <div className="mt-auto p-4 bg-emerald-50 rounded-2xl text-center">
-          <p className="text-xs text-emerald-700 font-bold mb-1 italic">Club Balance</p>
+          <p className="text-xs text-emerald-700 font-bold mb-1 italic">Balance</p>
           <p className="text-xl font-black text-slate-900">{totalBalance.toLocaleString()}원</p>
         </div>
       </aside>
 
+      {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-slate-200 z-50 px-4 h-16 flex items-center justify-between">
         <div className="flex items-center space-x-2"><div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold italic">Z</div><h1 className="font-bold text-lg">동물원</h1></div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-600">{isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}</button>
@@ -172,7 +152,7 @@ export default function App() {
           <div className="absolute left-0 top-0 bottom-0 w-64 bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
              <nav className="space-y-4 pt-10">
                 {['DASHBOARD', 'ATTENDANCE', 'NOTICES', 'FINANCES', 'MEMBERS'].map((id) => (
-                  <button key={id} onClick={() => { setActiveView(id as any); setIsMobileMenuOpen(false); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeView === id ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>
+                  <button key={id} onClick={() => { setActiveView(id); setIsMobileMenuOpen(false); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold ${activeView === id ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>
                     {id}
                   </button>
                 ))}
@@ -181,34 +161,39 @@ export default function App() {
         </div>
       )}
 
-      <main className="flex-1 p-4 lg:p-10 pt-24 lg:pt-10 max-w-7xl mx-auto w-full overflow-x-hidden">
+      {/* Main View */}
+      <main className="flex-1 p-4 lg:p-10 pt-24 lg:pt-10 max-w-7xl mx-auto w-full">
         {activeView === 'DASHBOARD' && (
           <div className="space-y-8 animate-fade-in">
             <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-              <div><h2 className="text-4xl font-black text-slate-900 tracking-tight">모임 현황</h2><p className="text-slate-500 font-medium">동물원 골프 모임 관리 앱입니다.</p></div>
-              <button onClick={shareDataLink} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center space-x-2 shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition active:scale-95"><RefreshCw size={20} /><span>회원 데이터 동기화 링크 생성</span></button>
+              <div><h2 className="text-4xl font-black text-slate-900">모임 현황</h2><p className="text-slate-500 font-medium">동물원 골프 모임의 최신 상태입니다.</p></div>
+              <button onClick={shareDataLink} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center space-x-2 shadow-xl hover:bg-emerald-700 transition active:scale-95"><RefreshCw size={20} /><span>데이터 동기화 링크 생성</span></button>
             </header>
 
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-start space-x-4">
               <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600"><Info size={24} /></div>
-              <div className="text-sm text-slate-600 leading-relaxed">
+              <div className="text-sm text-slate-600">
                 <p className="font-bold text-slate-900 mb-1">📢 데이터 공유 안내</p>
                 총무님이 내용을 입력한 후 <b>[동기화 링크 생성]</b>을 눌러 카톡방에 보내주세요.
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[
-                { title: '다음 라운딩', value: meetings[0]?.date || '미정', sub: meetings[0]?.location || '일정 없음', color: 'text-slate-900' },
-                { title: '최근 공지', value: notices[0]?.title || '공지 없음', sub: notices[0]?.date || '-', color: 'text-slate-900' },
-                { title: '회비 잔액', value: `${totalBalance.toLocaleString()}원`, sub: '전체 관리 금액', color: 'text-emerald-600' }
-              ].map((card, i) => (
-                <div key={i} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition">
-                  <h3 className="font-bold text-slate-400 text-xs mb-3 uppercase tracking-widest">{card.title}</h3>
-                  <p className={`text-2xl font-black truncate ${card.color}`}>{card.value}</p>
-                  <p className="text-sm text-slate-500 mt-1 font-medium">{card.sub}</p>
-                </div>
-              ))}
+              <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                <h3 className="font-bold text-slate-400 text-xs mb-3 uppercase">다음 라운딩</h3>
+                <p className="text-2xl font-black truncate">{meetings[0]?.date || '미정'}</p>
+                <p className="text-sm text-slate-500 mt-1">{meetings[0]?.location || '일정 없음'}</p>
+              </div>
+              <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                <h3 className="font-bold text-slate-400 text-xs mb-3 uppercase">최근 공지</h3>
+                <p className="text-2xl font-black truncate">{notices[0]?.title || '공지 없음'}</p>
+                <p className="text-sm text-slate-500 mt-1">{notices[0]?.date || '-'}</p>
+              </div>
+              <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                <h3 className="font-bold text-slate-400 text-xs mb-3 uppercase">회비 잔액</h3>
+                <p className="text-2xl font-black text-emerald-600">{totalBalance.toLocaleString()}원</p>
+                <p className="text-sm text-slate-500 mt-1">안전하게 관리 중</p>
+              </div>
             </div>
           </div>
         )}
@@ -228,7 +213,7 @@ export default function App() {
                       <div key={member.id} className="flex justify-between items-center p-4 bg-slate-50/50 rounded-2xl">
                         <span className="font-bold text-slate-700">{member.name}</span>
                         <div className="flex bg-white p-1 rounded-xl shadow-inner">
-                          {Object.values(AttendanceStatus).filter(v => v !== '미정').map(s => (
+                          {['참석', '불참'].map(s => (
                             <button key={s} onClick={() => {
                               setMeetings(meetings.map(meet => meet.id === m.id ? {...meet, attendance: {...meet.attendance, [member.id]: s}} : meet));
                             }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${m.attendance[member.id] === s ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400'}`}>{s}</button>
@@ -239,11 +224,11 @@ export default function App() {
                   </div>
                 </div>
               ))}
+              {meetings.length === 0 && <p className="text-center py-20 text-slate-400">등록된 일정이 없습니다.</p>}
             </div>
           </div>
         )}
 
-        {/* 나머지 뷰들은 생략하지만 실제 데이터는 살아있음 */}
         {activeView === 'NOTICES' && (
            <div className="space-y-8 animate-fade-in">
               <header className="flex justify-between items-center"><h2 className="text-3xl font-black text-slate-900">공지사항</h2><button onClick={() => setModalType('NOTICES')} className="bg-emerald-600 text-white p-4 rounded-2xl shadow-lg"><Plus size={24} /></button></header>
@@ -264,10 +249,10 @@ export default function App() {
             <header className="flex justify-between items-center"><h2 className="text-3xl font-black text-slate-900">회비내역</h2><button onClick={() => setModalType('FINANCES')} className="bg-emerald-600 text-white p-4 rounded-2xl shadow-lg"><Plus size={24} /></button></header>
             <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
               <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest"><tr className="border-b border-slate-100"><th className="px-6 py-5">Date</th><th className="px-6 py-5">Description</th><th className="px-6 py-5 text-right">Amount</th></tr></thead>
+                <thead className="bg-slate-50 text-slate-400 text-xs font-black uppercase"><tr className="border-b border-slate-100"><th className="px-6 py-5">날짜</th><th className="px-6 py-5">내역</th><th className="px-6 py-5 text-right">금액</th></tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {finances.map(f => (
-                    <tr key={f.id} className="hover:bg-slate-50/50 transition">
+                    <tr key={f.id} className="hover:bg-slate-50/50">
                       <td className="px-6 py-4 text-sm font-bold text-slate-400">{f.date}</td>
                       <td className="px-6 py-4 font-bold text-slate-800">{f.description}</td>
                       <td className={`px-6 py-4 text-right font-black ${f.type === 'INCOME' ? 'text-emerald-600' : 'text-red-500'}`}>{f.type === 'INCOME' ? '+' : '-'}{f.amount.toLocaleString()}원</td>
@@ -297,9 +282,10 @@ export default function App() {
         )}
       </main>
 
+      {/* Modals */}
       {modalType === 'MEMBERS' && (
-        <Modal title="회원 등록" onClose={() => setModalType(null)} onSave={(fd: FormData) => {
-          setMembers([...members, { id: generateId(), name: fd.get('name') as string, role: fd.get('role') as any, phoneNumber: fd.get('phone') as string }]);
+        <Modal title="회원 등록" onClose={() => setModalType(null)} onSave={(fd) => {
+          setMembers([...members, { id: generateId(), name: fd.get('name'), role: fd.get('role'), phoneNumber: fd.get('phone') }]);
           setModalType(null);
         }}>
           <input name="name" placeholder="이름" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
@@ -309,32 +295,32 @@ export default function App() {
       )}
 
       {modalType === 'ATTENDANCE' && (
-        <Modal title="라운딩 일정 추가" onClose={() => setModalType(null)} onSave={(fd: FormData) => {
-          setMeetings([{ id: generateId(), date: fd.get('date') as string, location: fd.get('location') as string, attendance: {} }, ...meetings]);
+        <Modal title="일정 추가" onClose={() => setModalType(null)} onSave={(fd) => {
+          setMeetings([{ id: generateId(), date: fd.get('date'), location: fd.get('location'), attendance: {} }, ...meetings]);
           setModalType(null);
         }}>
           <input name="date" type="date" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
-          <input name="location" placeholder="골프장 장소" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
+          <input name="location" placeholder="장소" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
         </Modal>
       )}
 
       {modalType === 'NOTICES' && (
-        <Modal title="공지사항 작성" onClose={() => setModalType(null)} onSave={(fd: FormData) => {
-          setNotices([{ id: generateId(), title: fd.get('title') as string, content: fd.get('content') as string, date: new Date().toISOString().split('T')[0], isImportant: true }, ...notices]);
+        <Modal title="공지사항 작성" onClose={() => setModalType(null)} onSave={(fd) => {
+          setNotices([{ id: generateId(), title: fd.get('title'), content: fd.get('content'), date: new Date().toISOString().split('T')[0] }, ...notices]);
           setModalType(null);
         }}>
           <input name="title" placeholder="제목" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
-          <textarea name="content" placeholder="공지 내용" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none h-40 font-bold" />
+          <textarea name="content" placeholder="내용" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none h-40 font-bold" />
         </Modal>
       )}
 
       {modalType === 'FINANCES' && (
-        <Modal title="회비 내역 추가" onClose={() => setModalType(null)} onSave={(fd: FormData) => {
-          setFinances([{ id: generateId(), date: fd.get('date') as string, description: fd.get('desc') as string, amount: Number(fd.get('amount')), type: fd.get('type') as any }, ...finances]);
+        <Modal title="회비 추가" onClose={() => setModalType(null)} onSave={(fd) => {
+          setFinances([{ id: generateId(), date: fd.get('date'), description: fd.get('desc'), amount: Number(fd.get('amount')), type: fd.get('type') }, ...finances]);
           setModalType(null);
         }}>
           <input name="date" type="date" defaultValue={new Date().toISOString().split('T')[0]} required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
-          <input name="desc" placeholder="항목 설명" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
+          <input name="desc" placeholder="내용" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
           <input name="amount" type="number" placeholder="금액" required className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none font-bold" />
           <div className="flex space-x-2">
             <label className="flex-1"><input type="radio" name="type" value="INCOME" defaultChecked className="hidden peer" /><div className="p-4 text-center bg-slate-100 rounded-2xl peer-checked:bg-emerald-600 peer-checked:text-white font-black transition">입금 (+)</div></label>
