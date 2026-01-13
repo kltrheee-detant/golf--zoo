@@ -21,8 +21,8 @@ import {
   RefreshCw,
   Link
 } from 'lucide-react';
-import { ViewType, Member, Meeting, Notice, FinancialRecord, AttendanceStatus } from './types';
-import { geminiService } from './services/geminiService';
+import { ViewType, Member, Meeting, Notice, FinancialRecord, AttendanceStatus } from './types.ts';
+import { geminiService } from './services/geminiService.ts';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
