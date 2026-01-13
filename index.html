@@ -11,6 +11,15 @@
         body { font-family: 'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; margin: 0; padding: 0; }
         .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        #root:empty::before {
+            content: "앱을 불러오는 중입니다... 잠시만 기다려주세요.";
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #64748b;
+            font-weight: bold;
+        }
     </style>
     <script type="importmap">
     {
@@ -26,7 +35,6 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <!-- 앱 실행을 위해 이 줄이 반드시 필요합니다 -->
     <script type="module" src="./index.tsx"></script>
 </body>
 </html>

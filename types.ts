@@ -1,9 +1,11 @@
 
-export enum AttendanceStatus {
-  ATTENDING = '참석',
-  ABSENT = '불참',
-  PENDING = '미정'
-}
+export const AttendanceStatus = {
+  ATTENDING: '참석',
+  ABSENT: '불참',
+  PENDING: '미정'
+} as const;
+
+export type AttendanceStatusType = typeof AttendanceStatus[keyof typeof AttendanceStatus];
 
 export interface Member {
   id: string;
@@ -16,7 +18,7 @@ export interface Meeting {
   id: string;
   date: string;
   location: string;
-  attendance: Record<string, AttendanceStatus>; // memberId -> status
+  attendance: Record<string, AttendanceStatusType>;
 }
 
 export interface Notice {

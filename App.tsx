@@ -7,30 +7,29 @@ import {
   Wallet, 
   LayoutDashboard, 
   Plus, 
-  CheckCircle2, 
-  XCircle, 
   Menu, 
   X, 
-  Sparkles, 
   Trash2, 
-  Copy, 
   Info,
   RefreshCw
 } from 'lucide-react';
-import { ViewType, Member, Meeting, Notice, FinancialRecord, AttendanceStatus } from './types';
-import { geminiService } from './services/geminiService';
+import { ViewType, Member, Meeting, Notice, FinancialRecord, AttendanceStatus, AttendanceStatusType } from './types.ts';
+import { geminiService } from './services/geminiService.ts';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// 한글을 포함한 데이터를 안전하게 Base64로 변환 (UTF-8 대응)
 function encodeData(obj: any) {
-  const str = JSON.stringify(obj);
-  const bytes = new TextEncoder().encode(str);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  try {
+    const str = JSON.stringify(obj);
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  } catch (e) {
+    return "";
   }
-  return btoa(binary);
 }
 
 function decodeData(base64: string) {
@@ -43,7 +42,6 @@ function decodeData(base64: string) {
     const str = new TextDecoder().decode(bytes);
     return JSON.parse(str);
   } catch (e) {
-    console.error("데이터 디코딩 실패", e);
     return null;
   }
 }
@@ -58,8 +56,6 @@ export default function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
 
   const [modalType, setModalType] = useState<ViewType | null>(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -88,7 +84,7 @@ export default function App() {
       if (savedFinances) setFinances(JSON.parse(savedFinances));
       if (savedMeetings) setMeetings(JSON.parse(savedMeetings));
     } catch (e) {
-      console.error("로컬 저장소 로드 중 오류");
+      console.error("Storage load error");
     }
   }, []);
 
@@ -114,13 +110,11 @@ export default function App() {
   };
 
   const shareDataLink = () => {
-    if (members.length === 0 && notices.length === 0 && finances.length === 0) {
-      return alert('공유할 데이터가 없습니다. 먼저 내용을 입력해주세요.');
-    }
     const data = { members, notices, finances, meetings };
     const encoded = encodeData(data);
+    if (!encoded) return alert('데이터 변환 중 오류가 발생했습니다.');
     const shareUrl = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
-    copyToClipboard(shareUrl, '회원용 동기화 링크가 복사되었습니다! 카톡방에 붙여넣으세요.');
+    copyToClipboard(shareUrl, '회원용 동기화 링크가 복사되었습니다!');
   };
 
   const Modal = ({ title, children, onClose, onSave }: any) => (
@@ -143,7 +137,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex bg-slate-50">
-      {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200 p-6 sticky top-0 h-screen">
         <div className="flex items-center space-x-3 mb-10 px-2">
           <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl italic">Z</div>
@@ -169,7 +162,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Mobile Menu */}
       <div className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-slate-200 z-50 px-4 h-16 flex items-center justify-between">
         <div className="flex items-center space-x-2"><div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold italic">Z</div><h1 className="font-bold text-lg">동물원</h1></div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-600">{isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}</button>
@@ -189,12 +181,11 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content */}
       <main className="flex-1 p-4 lg:p-10 pt-24 lg:pt-10 max-w-7xl mx-auto w-full overflow-x-hidden">
         {activeView === 'DASHBOARD' && (
           <div className="space-y-8 animate-fade-in">
             <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-              <div><h2 className="text-4xl font-black text-slate-900 tracking-tight">모임 현황</h2><p className="text-slate-500 font-medium">동물원 골프 모임의 최신 상태입니다.</p></div>
+              <div><h2 className="text-4xl font-black text-slate-900 tracking-tight">모임 현황</h2><p className="text-slate-500 font-medium">동물원 골프 모임 관리 앱입니다.</p></div>
               <button onClick={shareDataLink} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center space-x-2 shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition active:scale-95"><RefreshCw size={20} /><span>회원 데이터 동기화 링크 생성</span></button>
             </header>
 
@@ -202,7 +193,7 @@ export default function App() {
               <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600"><Info size={24} /></div>
               <div className="text-sm text-slate-600 leading-relaxed">
                 <p className="font-bold text-slate-900 mb-1">📢 데이터 공유 안내</p>
-                총무님이 입력한 내용을 회원들에게 보여주려면 <b>[동기화 링크 생성]</b> 버튼을 누른 후 카톡방에 링크를 올리세요. 회원들이 그 링크로 접속하면 총무님과 똑같은 화면을 볼 수 있습니다.
+                총무님이 내용을 입력한 후 <b>[동기화 링크 생성]</b>을 눌러 카톡방에 보내주세요.
               </div>
             </div>
 
@@ -222,7 +213,6 @@ export default function App() {
           </div>
         )}
 
-        {/* 나머지 뷰들은 기존 로직 유지하되 안전하게 렌더링 */}
         {activeView === 'ATTENDANCE' && (
           <div className="space-y-8 animate-fade-in">
             <header className="flex justify-between items-center"><h2 className="text-3xl font-black text-slate-900">참석체크</h2><button onClick={() => setModalType('ATTENDANCE')} className="bg-emerald-600 text-white p-4 rounded-2xl shadow-lg"><Plus size={24} /></button></header>
@@ -238,9 +228,9 @@ export default function App() {
                       <div key={member.id} className="flex justify-between items-center p-4 bg-slate-50/50 rounded-2xl">
                         <span className="font-bold text-slate-700">{member.name}</span>
                         <div className="flex bg-white p-1 rounded-xl shadow-inner">
-                          {['참석', '불참'].map(s => (
+                          {Object.values(AttendanceStatus).filter(v => v !== '미정').map(s => (
                             <button key={s} onClick={() => {
-                              setMeetings(meetings.map(meet => meet.id === m.id ? {...meet, attendance: {...meet.attendance, [member.id]: s as any}} : meet));
+                              setMeetings(meetings.map(meet => meet.id === m.id ? {...meet, attendance: {...meet.attendance, [member.id]: s}} : meet));
                             }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${m.attendance[member.id] === s ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400'}`}>{s}</button>
                           ))}
                         </div>
@@ -249,24 +239,24 @@ export default function App() {
                   </div>
                 </div>
               ))}
-              {meetings.length === 0 && <p className="text-center py-20 text-slate-400 font-bold">등록된 일정이 없습니다.</p>}
             </div>
           </div>
         )}
 
+        {/* 나머지 뷰들은 생략하지만 실제 데이터는 살아있음 */}
         {activeView === 'NOTICES' && (
-          <div className="space-y-8 animate-fade-in">
-            <header className="flex justify-between items-center"><h2 className="text-3xl font-black text-slate-900">공지사항</h2><button onClick={() => setModalType('NOTICES')} className="bg-emerald-600 text-white p-4 rounded-2xl shadow-lg"><Plus size={24} /></button></header>
-            <div className="grid gap-4">
-              {notices.map(n => (
-                <div key={n.id} className="p-8 bg-white rounded-[2rem] border border-slate-100 shadow-sm group">
-                  <div className="flex justify-between items-start mb-4"><span className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">{n.date}</span><button onClick={() => deleteItem('NOTICES', n.id)} className="text-slate-200 group-hover:text-red-500 transition"><Trash2 size={18} /></button></div>
-                  <h3 className="text-2xl font-black text-slate-800 mb-3">{n.title}</h3>
-                  <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">{n.content}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+           <div className="space-y-8 animate-fade-in">
+              <header className="flex justify-between items-center"><h2 className="text-3xl font-black text-slate-900">공지사항</h2><button onClick={() => setModalType('NOTICES')} className="bg-emerald-600 text-white p-4 rounded-2xl shadow-lg"><Plus size={24} /></button></header>
+              <div className="grid gap-4">
+                {notices.map(n => (
+                  <div key={n.id} className="p-8 bg-white rounded-[2rem] border border-slate-100 shadow-sm group">
+                    <div className="flex justify-between items-start mb-4"><span className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">{n.date}</span><button onClick={() => deleteItem('NOTICES', n.id)} className="text-slate-200 group-hover:text-red-500 transition"><Trash2 size={18} /></button></div>
+                    <h3 className="text-2xl font-black text-slate-800 mb-3">{n.title}</h3>
+                    <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">{n.content}</p>
+                  </div>
+                ))}
+              </div>
+           </div>
         )}
 
         {activeView === 'FINANCES' && (
@@ -285,7 +275,6 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
-              {finances.length === 0 && <p className="text-center py-20 text-slate-400 font-bold">기록된 회비 내역이 없습니다.</p>}
             </div>
           </div>
         )}
@@ -297,10 +286,10 @@ export default function App() {
               {members.map(m => (
                 <div key={m.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center group">
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center font-black text-white shadow-lg shadow-emerald-100">{m.name[0]}</div>
-                    <div><h3 className="font-black text-slate-800">{m.name}</h3><p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">{m.role}</p></div>
+                    <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center font-black text-white">{m.name[0]}</div>
+                    <div><h3 className="font-black text-slate-800">{m.name}</h3><p className="text-xs font-bold text-slate-400 uppercase">{m.role}</p></div>
                   </div>
-                  <button onClick={() => deleteItem('MEMBERS', m.id)} className="text-slate-200 group-hover:text-red-500 transition"><X size={20} /></button>
+                  <button onClick={() => deleteItem('MEMBERS', m.id)} className="text-slate-200 group-hover:text-red-500 transition"><Trash2 size={20} /></button>
                 </div>
               ))}
             </div>
@@ -308,7 +297,6 @@ export default function App() {
         )}
       </main>
 
-      {/* 모달 (기존 동일) */}
       {modalType === 'MEMBERS' && (
         <Modal title="회원 등록" onClose={() => setModalType(null)} onSave={(fd: FormData) => {
           setMembers([...members, { id: generateId(), name: fd.get('name') as string, role: fd.get('role') as any, phoneNumber: fd.get('phone') as string }]);
