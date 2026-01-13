@@ -1,0 +1,7 @@
+{
+  "name": "Copy of 동물원 골프 모임",
+  "description": "골프 모임 '동물원'의 월례회 참석 체크, 공지사항 및 회비 관리를 위한 앱입니다.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
