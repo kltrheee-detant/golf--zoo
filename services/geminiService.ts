@@ -1,10 +1,9 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export const geminiService = {
   async generateNotice(topic: string) {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `골프 모임 공지사항을 작성해주세요. 주제: ${topic}. 말투는 정중하고 명확하게, 핵심 정보를 포함하여 한국어로 작성해주세요.`,
@@ -13,6 +12,7 @@ export const geminiService = {
   },
 
   async analyzeFinances(records: any[]) {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
     const dataString = JSON.stringify(records);
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
